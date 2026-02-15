@@ -88,6 +88,10 @@ class GoogleDriveService {
     });
   }
 
+  hasToken(): boolean {
+    return !!this.accessToken;
+  }
+
   async uploadFile(file: File, folderId?: string): Promise<GoogleDriveFile> {
     if (!this.accessToken) {
       const hasAccess = await this.requestAccess();

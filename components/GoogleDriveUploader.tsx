@@ -14,6 +14,7 @@ export default function GoogleDriveUploader({
   accept = ".pdf,.epub,.mobi",
 }: GoogleDriveUploaderProps) {
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkInput, setLinkInput] = useState("");
@@ -25,6 +26,8 @@ export default function GoogleDriveUploader({
       try {
         await googleDriveService.initialize();
         setIsInitialized(true);
+        // Verificar se já tem token
+        setIsAuthenticated(googleDriveService.hasToken());
       } catch (err) {
         console.error("Erro ao inicializar Google Drive:", err);
         setError("Erro ao inicializar Google Drive. Verifique as credenciais.");
@@ -33,13 +36,32 @@ export default function GoogleDriveUploader({
     init();
   }, []);
 
+  async function handleAuthenticate() {
+    setError("");
+    try {
+      const success = await googleDriveService.requestAccess();
+      if (success) {
+        setIsAuthenticated(true);
+        setSuccess("Conectado ao Google Drive!");
+        setTimeout(() => setSuccess(""), 3000);
+      } else {
+        setError("Não foi possível conectar ao Google Drive.");
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao conectar. Tente novamente.",
+      );
+    }
+  }
+
   async function handleUpload(file: File) {
     setIsUploading(true);
     setError("");
     setSuccess("");
 
     try {
-      await googleDriveService.requestAccess();
       const driveFile: GoogleDriveFile = await googleDriveService.uploadFile(file);
       
       onFileUploaded(driveFile.webViewLink, driveFile.name);
@@ -82,7 +104,6 @@ export default function GoogleDriveUploader({
 
       // Tentar obter informações do arquivo (requer autenticação)
       try {
-        await googleDriveService.requestAccess();
         const fileInfo = await googleDriveService.getFileInfo(fileId);
         onFileUploaded(fileInfo.webViewLink, fileInfo.name);
         setSuccess(`Arquivo "${fileInfo.name}" adicionado com sucesso!`);
@@ -128,66 +149,84 @@ export default function GoogleDriveUploader({
         </div>
       )}
 
-      <div className="gdrive-actions">
-        <label
-          className={`btn btn-primary ${isUploading ? "btn-loading" : ""}`}
-          htmlFor="drive-upload"
-        >
-          {isUploading ? (
-            <>
-              <Loader2 className="animate-spin" size={16} />
-              <span>Enviando...</span>
-            </>
-          ) : (
-            <>
-              <Upload size={16} />
-              <span>Fazer Upload para Drive</span>
-            </>
-          )}
-          <input
-            id="drive-upload"
-            type="file"
-            accept={accept}
-            onChange={handleFileSelect}
-            disabled={isUploading}
-            className="file-input-hidden"
-          />
-        </label>
-
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => setShowLinkInput(!showLinkInput)}
-          disabled={isUploading}
-        >
-          <LinkIcon size={16} />
-          <span>Colar Link do Drive</span>
-        </button>
-      </div>
-
-      {showLinkInput && (
-        <div className="gdrive-link-input">
-          <input
-            type="url"
-            placeholder="Cole o link do Google Drive aqui..."
-            value={linkInput}
-            onChange={(e) => setLinkInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                handleLinkSubmit();
-              }
-            }}
-          />
+      {!isAuthenticated ? (
+        <div className="gdrive-auth">
           <button
             type="button"
-            className="btn btn-primary btn-sm"
-            onClick={handleLinkSubmit}
-            disabled={!linkInput.trim()}
+            className="btn btn-primary"
+            onClick={handleAuthenticate}
           >
-            Adicionar
+            <Upload size={16} />
+            <span>Conectar ao Google Drive</span>
           </button>
+          <p className="gdrive-auth-hint">
+            Conecte-se ao Google Drive para fazer upload de arquivos
+          </p>
         </div>
+      ) : (
+        <>
+          <div className="gdrive-actions">
+            <label
+              className={`btn btn-primary ${isUploading ? "btn-loading" : ""}`}
+              htmlFor="drive-upload"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="animate-spin" size={16} />
+                  <span>Enviando...</span>
+                </>
+              ) : (
+                <>
+                  <Upload size={16} />
+                  <span>Fazer Upload para Drive</span>
+                </>
+              )}
+              <input
+                id="drive-upload"
+                type="file"
+                accept={accept}
+                onChange={handleFileSelect}
+                disabled={isUploading}
+                className="file-input-hidden"
+              />
+            </label>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setShowLinkInput(!showLinkInput)}
+              disabled={isUploading}
+            >
+              <LinkIcon size={16} />
+              <span>Colar Link do Drive</span>
+            </button>
+          </div>
+
+          {showLinkInput && (
+            <div className="gdrive-link-input">
+              <input
+                type="url"
+                placeholder="Cole o link do Google Drive aqui..."
+                value={linkInput}
+                onChange={(e) => setLinkInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleLinkSubmit();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleLinkSubmit}
+                disabled={!linkInput.trim()}
+              >
+                Adicionar
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <style jsx>{`
@@ -203,6 +242,24 @@ export default function GoogleDriveUploader({
           gap: 0.5rem;
           padding: 1rem;
           color: #666;
+        }
+
+        .gdrive-auth {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 1.5rem;
+          background-color: #f5f5f5;
+          border-radius: 0.5rem;
+          border: 1px dashed #ddd;
+        }
+
+        .gdrive-auth-hint {
+          margin: 0;
+          font-size: 0.875rem;
+          color: #666;
+          text-align: center;
         }
 
         .gdrive-message {
