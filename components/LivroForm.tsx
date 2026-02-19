@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { Autor, Categoria, LivroComDetalhes } from "@/lib/types";
-import { getAutores, getCategorias, createAutor, createCategoria } from "@/lib/services";
+import { getAutores, getCategorias, createAutor, createCategoria, getEditoras, createEditora } from "@/lib/services";
 import { X, Plus, ImagePlus } from "lucide-react";
 import GoogleDriveUploader from "@/components/GoogleDriveUploader";
 
@@ -15,7 +15,7 @@ export interface LivroFormSubmitData {
   titulo: string;
   descricao: string;
   ano: number;
-  editora: string;
+  id_editora?: number | null;
   paginas: number;
   idioma: string;
   edicao: number;
@@ -37,7 +37,13 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
   const [titulo, setTitulo] = useState(livro?.titulo ?? "");
   const [descricao, setDescricao] = useState(livro?.descricao ?? "");
   const [ano, setAno] = useState(livro?.ano ?? new Date().getFullYear());
-  const [editora, setEditora] = useState(livro?.editora ?? "");
+  const [idEditora, setIdEditora] = useState<number | undefined>(
+    (livro as any)?.id_editora ?? undefined,
+  );
+  const [editoras, setEditoras] = useState<{ id: number; nome: string }[]>([]);
+  const [novoEditoraNome, setNovoEditoraNome] = useState("");
+  const [criandoEditora, setCriandoEditora] = useState(false);
+  const [erroEditora, setErroEditora] = useState("");
   const [paginas, setPaginas] = useState(livro?.paginas ?? 0);
   const [idioma, setIdioma] = useState(livro?.idioma ?? "Português");
   const [edicao, setEdicao] = useState(livro?.edicao ?? 1);
@@ -54,6 +60,14 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
   );
   const [driveLinks, setDriveLinks] = useState<DriveFileLink[]>([]);
 
+  // Autocomplete state
+  const [autorQuery, setAutorQuery] = useState("");
+  const [categoriaQuery, setCategoriaQuery] = useState("");
+  const [autorSuggestions, setAutorSuggestions] = useState<Autor[]>([]);
+  const [categoriaSuggestions, setCategoriaSuggestions] = useState<Categoria[]>([]);
+  const autorInputRef = useRef<HTMLInputElement>(null);
+  const categoriaInputRef = useRef<HTMLInputElement>(null);
+
   // Capa
   const [capaFile, setCapaFile] = useState<File | null>(null);
   const [capaPreview, setCapaPreview] = useState<string | null>(livro?.capa ?? null);
@@ -69,15 +83,41 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
 
   useEffect(() => {
     async function loadData() {
-      const [autoresData, categoriasData] = await Promise.all([
+      const [autoresData, categoriasData, editorasData] = await Promise.all([
         getAutores(),
         getCategorias(),
+        getEditoras(),
       ]);
       setAutores(autoresData);
       setCategorias(categoriasData);
+      setAutorSuggestions(autoresData);
+      setCategoriaSuggestions(categoriasData);
+      setEditoras(editorasData || []);
     }
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!autorQuery.trim()) {
+      setAutorSuggestions(autores);
+      return;
+    }
+    const q = autorQuery.toLowerCase();
+    setAutorSuggestions(
+      autores.filter((a) => a.nome.toLowerCase().includes(q)).slice(0, 8),
+    );
+  }, [autorQuery, autores]);
+
+  useEffect(() => {
+    if (!categoriaQuery.trim()) {
+      setCategoriaSuggestions(categorias);
+      return;
+    }
+    const q = categoriaQuery.toLowerCase();
+    setCategoriaSuggestions(
+      categorias.filter((c) => c.nome.toLowerCase().includes(q)).slice(0, 8),
+    );
+  }, [categoriaQuery, categorias]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,7 +125,7 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
       titulo,
       descricao,
       ano,
-      editora,
+      id_editora: idEditora,
       paginas,
       idioma,
       edicao,
@@ -109,6 +149,8 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
       prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
     );
   }
+
+  // Expose selected IDs as hidden inputs for form submission if needed
 
   function handleDriveFileAdded(link: string, nome: string) {
     setDriveLinks((prev) => [...prev, { link, nome }]);
@@ -180,6 +222,24 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
     }
   }
 
+  async function handleCriarEditora() {
+    if (!novoEditoraNome.trim()) return;
+    setCriandoEditora(true);
+    setErroEditora("");
+    try {
+      const nova = await createEditora(novoEditoraNome.trim());
+      setEditoras((prev) => [...prev, nova].sort((a, b) => a.nome.localeCompare(b.nome)));
+      setIdEditora(nova.id);
+      setNovoEditoraNome("");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : JSON.stringify(err);
+      setErroEditora(msg);
+      console.error("Erro ao criar editora:", msg);
+    } finally {
+      setCriandoEditora(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="livro-form">
       {/* Capa */}
@@ -241,16 +301,49 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
             />
           </div>
 
-          <div className="form-group">
+          <div className="form-group form-group-editora">
             <label htmlFor="editora">Editora *</label>
-            <input
-              id="editora"
-              type="text"
-              required
-              value={editora}
-              onChange={(e) => setEditora(e.target.value)}
-              placeholder="Nome da editora"
-            />
+            <div className="editora-row">
+              <select
+                className="editora-select"
+                id="editora"
+                required
+                value={idEditora ?? ""}
+                onChange={(e) =>
+                  setIdEditora(e.target.value === "" ? undefined : Number(e.target.value))
+                }
+              >
+                <option value="">Selecione uma editora</option>
+                {editoras.map((ed) => (
+                  <option key={ed.id} value={ed.id}>
+                    {ed.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="inline-create editora-create">
+              <input
+                type="text"
+                placeholder="Criar nova editora..."
+                value={novoEditoraNome}
+                onChange={(e) => setNovoEditoraNome(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleCriarEditora();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleCriarEditora}
+                disabled={criandoEditora || !novoEditoraNome.trim()}
+              >
+                <Plus size={14} /> {criandoEditora ? "..." : "Criar"}
+              </button>
+            </div>
+            {erroEditora && <p className="form-error-text">{erroEditora}</p>}
           </div>
 
           <div className="form-group">
@@ -351,25 +444,60 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
           </button>
         </div>
         {erroAutor && <p className="form-error-text">{erroAutor}</p>}
-        {autores.length === 0 ? (
-          <p className="form-empty-text">
-            Nenhum autor cadastrado. Crie um acima.
-          </p>
-        ) : (
-          <div className="chip-selector">
-            {autores.map((autor) => (
-              <button
-                key={autor.id}
-                type="button"
-                className={`chip ${selectedAutores.includes(autor.id) ? "chip-selected" : ""}`}
-                onClick={() => toggleAutor(autor.id)}
-              >
-                {autor.nome}
-                {selectedAutores.includes(autor.id) && <X size={14} />}
-              </button>
-            ))}
+        <div className="autocomplete">
+          <div className="selected-list">
+            {selectedAutores.map((id) => {
+              const a = autores.find((x) => x.id === id);
+              if (!a) return null;
+              return (
+                <span key={id} className="chip chip-selected">
+                  {a.nome}
+                  <button
+                    type="button"
+                    className="chip-remove"
+                    onClick={() => toggleAutor(id)}
+                    aria-label={`Remover ${a.nome}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              );
+            })}
           </div>
-        )}
+
+          <input
+            ref={autorInputRef}
+            type="text"
+            placeholder="Buscar autor..."
+            value={autorQuery}
+            onChange={(e) => setAutorQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const first = autorSuggestions[0];
+                if (first) {
+                  if (!selectedAutores.includes(first.id)) setSelectedAutores((p) => [...p, first.id]);
+                  setAutorQuery("");
+                }
+              }
+            }}
+          />
+
+          {autorSuggestions.length > 0 && autorQuery.trim() && (
+            <ul className="suggestions">
+              {autorSuggestions.map((s) => (
+                <li key={s.id} onClick={() => {
+                  if (!selectedAutores.includes(s.id)) setSelectedAutores((p) => [...p, s.id]);
+                  setAutorQuery("");
+                  if (autorInputRef.current) autorInputRef.current.focus();
+                }}>{s.nome}</li>
+              ))}
+            </ul>
+          )}
+          {autores.length === 0 && (
+            <p className="form-empty-text">Nenhum autor cadastrado. Crie um acima.</p>
+          )}
+        </div>
       </div>
 
       <div className="form-section">
@@ -397,25 +525,60 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
           </button>
         </div>
         {erroCategoria && <p className="form-error-text">{erroCategoria}</p>}
-        {categorias.length === 0 ? (
-          <p className="form-empty-text">
-            Nenhuma categoria cadastrada. Crie uma acima.
-          </p>
-        ) : (
-          <div className="chip-selector">
-            {categorias.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                className={`chip ${selectedCategorias.includes(cat.id) ? "chip-selected" : ""}`}
-                onClick={() => toggleCategoria(cat.id)}
-              >
-                {cat.nome}
-                {selectedCategorias.includes(cat.id) && <X size={14} />}
-              </button>
-            ))}
+        <div className="autocomplete">
+          <div className="selected-list">
+            {selectedCategorias.map((id) => {
+              const c = categorias.find((x) => x.id === id);
+              if (!c) return null;
+              return (
+                <span key={id} className="chip chip-selected">
+                  {c.nome}
+                  <button
+                    type="button"
+                    className="chip-remove"
+                    onClick={() => toggleCategoria(id)}
+                    aria-label={`Remover ${c.nome}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </span>
+              );
+            })}
           </div>
-        )}
+
+          <input
+            ref={categoriaInputRef}
+            type="text"
+            placeholder="Buscar categoria..."
+            value={categoriaQuery}
+            onChange={(e) => setCategoriaQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const first = categoriaSuggestions[0];
+                if (first) {
+                  if (!selectedCategorias.includes(first.id)) setSelectedCategorias((p) => [...p, first.id]);
+                  setCategoriaQuery("");
+                }
+              }
+            }}
+          />
+
+          {categoriaSuggestions.length > 0 && categoriaQuery.trim() && (
+            <ul className="suggestions">
+              {categoriaSuggestions.map((s) => (
+                <li key={s.id} onClick={() => {
+                  if (!selectedCategorias.includes(s.id)) setSelectedCategorias((p) => [...p, s.id]);
+                  setCategoriaQuery("");
+                  if (categoriaInputRef.current) categoriaInputRef.current.focus();
+                }}>{s.nome}</li>
+              ))}
+            </ul>
+          )}
+          {categorias.length === 0 && (
+            <p className="form-empty-text">Nenhuma categoria cadastrada. Crie uma acima.</p>
+          )}
+        </div>
       </div>
 
       {!livro && (

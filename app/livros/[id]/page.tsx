@@ -16,6 +16,7 @@ import {
   deleteLivro,
   addArquivo,
   deleteArquivo,
+  getEditoraById,
 } from "@/lib/services";
 import type { LivroComDetalhes, Arquivo } from "@/lib/types";
 import Loading from "@/components/Loading";
@@ -30,6 +31,7 @@ export default function LivroDetailPage({
   const { id } = use(params);
   const router = useRouter();
   const [livro, setLivro] = useState<LivroComDetalhes | null>(null);
+  const [editoraNome, setEditoraNome] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -40,8 +42,17 @@ export default function LivroDetailPage({
       try {
         const data = await getLivroById(Number(id));
         setLivro(data);
+        try {
+          const idEditora = (data as any).id_editora;
+          if (idEditora) {
+            const e = await getEditoraById(idEditora);
+            setEditoraNome(e?.nome ?? null);
+          }
+        } catch (e) {
+          console.error("Erro ao carregar editora:", (e as any)?.message ?? e, e);
+        }
       } catch (err) {
-        console.error("Erro ao carregar livro:", err);
+        console.error("Erro ao carregar livro:", (err as any)?.message ?? err, err);
       } finally {
         setLoading(false);
       }
@@ -161,7 +172,7 @@ export default function LivroDetailPage({
           </div>
           <div className="detail-item">
             <span className="label">Editora</span>
-            <span className="value">{livro.editora}</span>
+            <span className="value">{editoraNome ?? ""}</span>
           </div>
           <div className="detail-item">
             <span className="label">Páginas</span>

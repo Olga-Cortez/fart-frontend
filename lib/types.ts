@@ -48,7 +48,7 @@ export interface Livro {
   titulo: string;
   descricao: string | null;
   ano: number;
-  editora: string;
+  id_editora: number | null;
   paginas: number;
   idioma: string;
   edicao: number;
@@ -61,7 +61,7 @@ export interface LivroInsert {
   titulo: string;
   descricao?: string | null;
   ano: number;
-  editora: string;
+  id_editora?: number | null;
   paginas: number;
   idioma: string;
   edicao: number;
@@ -74,7 +74,7 @@ export interface LivroUpdate {
   titulo?: string;
   descricao?: string | null;
   ano?: number;
-  editora?: string;
+  id_editora?: number | null;
   paginas?: number;
   idioma?: string;
   edicao?: number;
@@ -82,6 +82,14 @@ export interface LivroUpdate {
   isbn10?: string | null;
   capa?: string | null;
   updated_at?: string;
+}
+
+// ---- Editora ----
+export interface Editora {
+  id: number;
+  created_at: string;
+  updated_at: string;
+  nome: string;
 }
 
 // ---- Autor ----

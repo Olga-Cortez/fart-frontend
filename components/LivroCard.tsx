@@ -8,17 +8,19 @@ interface LivroCardProps {
   livro: Livro;
   autores?: Autor[];
   categorias?: Categoria[];
+  editora?: { nome: string } | null;
 }
 
 export default function LivroCard({
   livro,
+  editora,
   autores = [],
   categorias = [],
 }: LivroCardProps) {
   return (
     <Link href={`/livros/${livro.id}`} className="livro-card">
       {livro.capa ? (
-        <img src={livro.capa} alt={livro.titulo} className="livro-card-capa" />
+        <figure><img src={livro.capa} alt={livro.titulo} className="livro-card-capa" /></figure>
       ) : (
         <div className="livro-card-icon">
           <BookOpen size={32} />
@@ -36,20 +38,16 @@ export default function LivroCard({
             <Calendar size={14} /> {livro.ano}
           </span>
           <span>
-            <Building2 size={14} /> {livro.editora}
+            <Building2 size={14} /> {editora?.nome ?? ""}
           </span>
           <span>
             <FileText size={14} /> {livro.paginas} págs.
           </span>
         </div>
         {categorias.length > 0 && (
-          <div className="livro-card-tags">
-            {categorias.map((c) => (
-              <span key={c.id} className="tag">
-                {c.nome}
-              </span>
-            ))}
-          </div>
+          <p className="livro-card-categorias">
+            {categorias.map((c) => c.nome).join(", ")}
+          </p>
         )}
       </div>
     </Link>

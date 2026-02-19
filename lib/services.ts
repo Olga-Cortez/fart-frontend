@@ -80,14 +80,45 @@ export async function deleteLivro(id: number): Promise<void> {
 }
 
 export async function searchLivros(query: string): Promise<Livro[]> {
-  const { data, error } = await supabase
+  // Busca em campos do livro
+  const { data: livrosData, error: livrosError } = await supabase
     .from("livro")
     .select("*")
-    .or(`titulo.ilike.%${query}%,descricao.ilike.%${query}%,editora.ilike.%${query}%,isbn13.ilike.%${query}%,isbn10.ilike.%${query}%`)
-    .order("titulo", { ascending: true });
+    .or(`titulo.ilike.%${query}%,descricao.ilike.%${query}%,isbn13.ilike.%${query}%,isbn10.ilike.%${query}%`);
 
-  if (error) throw error;
-  return data ?? [];
+  if (livrosError) throw livrosError;
+
+  const livros = (livrosData ?? []) as Livro[];
+
+  // Busca por editora (agora em tabela separada) e junta resultados
+  const { data: editoras, error: editorasError } = await supabase
+    .from("editora")
+    .select("id")
+    .ilike("nome", `%${query}%`);
+
+  if (editorasError) throw editorasError;
+
+  const editoraIds = (editoras ?? []).map((e: any) => e.id) as number[];
+  let livrosPorEditora: Livro[] = [];
+  if (editoraIds.length > 0) {
+    const { data: byEditoraData, error: byEditoraError } = await supabase
+      .from("livro")
+      .select("*")
+      .in("id_editora", editoraIds);
+
+    if (byEditoraError) throw byEditoraError;
+    livrosPorEditora = (byEditoraData ?? []) as Livro[];
+  }
+
+  // combinar e ordenar por título
+  const combined = [...livros, ...livrosPorEditora];
+  const uniqueMap = new Map<number, Livro>();
+  combined.forEach((l) => uniqueMap.set(l.id, l));
+  const result = Array.from(uniqueMap.values()).sort((a, b) =>
+    a.titulo.localeCompare(b.titulo),
+  );
+
+  return result;
 }
 
 export async function getLivrosComDetalhes(): Promise<LivroComDetalhes[]> {
@@ -178,6 +209,29 @@ export async function getCategorias(): Promise<Categoria[]> {
   return data ?? [];
 }
 
+// ===================== EDITORAS (lista / criar) =====================
+
+export async function getEditoras(): Promise<{ id: number; nome: string }[]> {
+  const { data, error } = await supabase
+    .from("editora")
+    .select("id,nome")
+    .order("nome", { ascending: true });
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createEditora(nome: string): Promise<{ id: number; nome: string }> {
+  const { data, error } = await supabase
+    .from("editora")
+    .insert({ nome })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function createCategoria(nome: string): Promise<Categoria> {
   const { data, error } = await supabase
     .from("categoria")
@@ -230,6 +284,22 @@ export async function getCategoriasByLivro(
 
   if (error) throw error;
   return data ?? [];
+}
+
+// ===================== EDITORAS =====================
+
+export async function getEditoraById(id: number): Promise<{ nome: string } | null> {
+  const { data, error } = await supabase
+    .from("editora")
+    .select("nome")
+    .eq("id", id)
+    .single();
+
+  if (error) {
+    // se a editora não existir, retornamos null ao invés de lançar
+    return null;
+  }
+  return data ?? null;
 }
 
 // ===================== RELAÇÕES =====================
@@ -352,7 +422,7 @@ export async function createLivroCompleto(
     titulo: string;
     descricao?: string;
     ano: number;
-    editora: string;
+    id_editora?: number | null;
     paginas: number;
     idioma: string;
     edicao: number;
@@ -375,6 +445,7 @@ export async function createLivroCompleto(
     isbn13: livroData.isbn13 || null,
     isbn10: livroData.isbn10 || null,
     capa: capaUrl,
+    id_editora: livroData.id_editora ?? null,
   });
 
   if (autoresIds.length > 0 || categoriasIds.length > 0) {
@@ -401,7 +472,7 @@ export async function updateLivroCompleto(
     titulo: string;
     descricao?: string;
     ano: number;
-    editora: string;
+    id_editora?: number | null;
     paginas: number;
     idioma: string;
     edicao: number;
@@ -428,6 +499,10 @@ export async function updateLivroCompleto(
     isbn13: livroData.isbn13 || null,
     isbn10: livroData.isbn10 || null,
   };
+  // garantir id_editora está explícito se presente
+  if ((livroData as any).id_editora !== undefined) {
+    (updateData as any).id_editora = (livroData as any).id_editora;
+  }
   if (capaUrl !== undefined) {
     updateData.capa = capaUrl;
   }

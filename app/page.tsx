@@ -9,6 +9,7 @@ import {
   getCategorias,
   getAutoresByLivro,
   getCategoriasByLivro,
+  getEditoraById
 } from "@/lib/services";
 import type { Livro, Autor, Categoria } from "@/lib/types";
 import LivroCard from "@/components/LivroCard";
@@ -24,6 +25,8 @@ export default function HomePage() {
   const [livroCategorias, setLivroCategorias] = useState<
     Record<number, Categoria[]>
   >({});
+  const [livroEditoras, setLivroEditoras] = useState<Record<number, { nome: string } | null>>({});
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,20 +44,37 @@ export default function HomePage() {
         const recentLivros = livrosData.slice(0, 6);
         const autoresMap: Record<number, Autor[]> = {};
         const categoriasMap: Record<number, Categoria[]> = {};
+        const editorasMap: Record<number, { nome: string } | null> = {};
 
         await Promise.all(
           recentLivros.map(async (livro) => {
             const [autores, categorias] = await Promise.all([
               getAutoresByLivro(livro.id),
               getCategoriasByLivro(livro.id),
+              
             ]);
             autoresMap[livro.id] = autores;
             categoriasMap[livro.id] = categorias;
+
+             try {
+              // livro now uses `id_editora` as FK
+              const idEditora = (livro as any).id_editora;
+                if (idEditora) {
+                  const editora = await getEditoraById(idEditora);
+                  editorasMap[livro.id] = editora ? { nome: editora.nome } : null;
+                } else {
+                  editorasMap[livro.id] = null;
+                }
+            } catch (e) {
+              console.error("Erro ao carregar editora:", (e as any)?.message ?? e, e);
+              editorasMap[livro.id] = null;
+            }
           }),
         );
 
         setLivroAutores(autoresMap);
         setLivroCategorias(categoriasMap);
+        setLivroEditoras(editorasMap);
       } catch (err) {
         console.error("Erro ao carregar dados:", err);
       } finally {
@@ -137,6 +157,7 @@ export default function HomePage() {
                 livro={livro}
                 autores={livroAutores[livro.id]}
                 categorias={livroCategorias[livro.id]}
+                editora={livroEditoras[livro.id]}
               />
             ))}
           </div>

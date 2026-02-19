@@ -46,7 +46,7 @@ export default function EditarLivroPage({
           titulo: data.titulo,
           descricao: data.descricao || undefined,
           ano: data.ano,
-          editora: data.editora,
+          id_editora: data.id_editora ?? null,
           paginas: data.paginas,
           idioma: data.idioma,
           edicao: data.edicao,
