@@ -33,7 +33,6 @@ export default function SearchBar({
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
-          if (e.target.value === "") onSearch("");
         }}
       />
       {query && (

@@ -4,21 +4,22 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { BookOpen, Users, Tags, FileText, ArrowRight } from "lucide-react";
 import {
-  getLivros,
-  getAutores,
-  getCategorias,
-  getAutoresByLivro,
-  getCategoriasByLivro,
-  getEditoraById
+  getLivrosRecentes,
+  getDashboardStats,
+  getLivrosRelacionamentos,
 } from "@/lib/services";
 import type { Livro, Autor, Categoria } from "@/lib/types";
 import LivroCard from "@/components/LivroCard";
 import Loading from "@/components/Loading";
+import { useAuth } from "@/lib/authContext";
 
 export default function HomePage() {
+  const { user } = useAuth();
   const [livros, setLivros] = useState<Livro[]>([]);
+  const [livrosCount, setLivrosCount] = useState(0);
   const [autoresCount, setAutoresCount] = useState(0);
   const [categoriasCount, setCategoriasCount] = useState(0);
+  const [paginasTotal, setPaginasTotal] = useState(0);
   const [livroAutores, setLivroAutores] = useState<Record<number, Autor[]>>(
     {},
   );
@@ -32,49 +33,23 @@ export default function HomePage() {
   useEffect(() => {
     async function load() {
       try {
-        const [livrosData, autoresData, categoriasData] = await Promise.all([
-          getLivros(),
-          getAutores(),
-          getCategorias(),
+        const [recentLivros, dashboardStats] = await Promise.all([
+          getLivrosRecentes(6),
+          user ? getDashboardStats() : Promise.resolve(null),
         ]);
-        setLivros(livrosData);
-        setAutoresCount(autoresData.length);
-        setCategoriasCount(categoriasData.length);
+        setLivros(recentLivros);
 
-        const recentLivros = livrosData.slice(0, 6);
-        const autoresMap: Record<number, Autor[]> = {};
-        const categoriasMap: Record<number, Categoria[]> = {};
-        const editorasMap: Record<number, { nome: string } | null> = {};
+        if (dashboardStats) {
+          setLivrosCount(dashboardStats.livrosCount);
+          setAutoresCount(dashboardStats.autoresCount);
+          setCategoriasCount(dashboardStats.categoriasCount);
+          setPaginasTotal(dashboardStats.paginasTotal);
+        }
 
-        await Promise.all(
-          recentLivros.map(async (livro) => {
-            const [autores, categorias] = await Promise.all([
-              getAutoresByLivro(livro.id),
-              getCategoriasByLivro(livro.id),
-              
-            ]);
-            autoresMap[livro.id] = autores;
-            categoriasMap[livro.id] = categorias;
-
-             try {
-              // livro now uses `id_editora` as FK
-              const idEditora = (livro as any).id_editora;
-                if (idEditora) {
-                  const editora = await getEditoraById(idEditora);
-                  editorasMap[livro.id] = editora ? { nome: editora.nome } : null;
-                } else {
-                  editorasMap[livro.id] = null;
-                }
-            } catch (e) {
-              console.error("Erro ao carregar editora:", (e as any)?.message ?? e, e);
-              editorasMap[livro.id] = null;
-            }
-          }),
-        );
-
-        setLivroAutores(autoresMap);
-        setLivroCategorias(categoriasMap);
-        setLivroEditoras(editorasMap);
+        const relacionamentos = await getLivrosRelacionamentos(recentLivros);
+        setLivroAutores(relacionamentos.autoresPorLivro);
+        setLivroCategorias(relacionamentos.categoriasPorLivro);
+        setLivroEditoras(relacionamentos.editorasPorLivro);
       } catch (err) {
         console.error("Erro ao carregar dados:", err);
       } finally {
@@ -82,24 +57,24 @@ export default function HomePage() {
       }
     }
     load();
-  }, []);
+  }, [user]);
 
   if (loading) return <Loading />;
 
   return (
     <div>
       <div className="page-header">
-        <h2>Painel da Biblioteca</h2>
+        <h2>{user ? "Painel da Biblioteca" : "Acervo da Biblioteca"}</h2>
       </div>
 
-      <div className="dashboard-stats">
+      {user && <div className="dashboard-stats">
         <div className="stat-card">
           <div className="stat-card-icon blue">
             <BookOpen size={24} />
           </div>
           <div className="stat-card-info">
             <h4>Livros</h4>
-            <span className="stat-number">{livros.length}</span>
+            <span className="stat-number">{livrosCount}</span>
           </div>
         </div>
         <div className="stat-card">
@@ -127,13 +102,11 @@ export default function HomePage() {
           <div className="stat-card-info">
             <h4>Páginas Total</h4>
             <span className="stat-number">
-              {livros
-                .reduce((acc, l) => acc + l.paginas, 0)
-                .toLocaleString("pt-BR")}
+              {paginasTotal.toLocaleString("pt-BR")}
             </span>
           </div>
         </div>
-      </div>
+      </div>}
 
       <div className="dashboard-section">
         <div className="dashboard-section-header">
@@ -144,10 +117,15 @@ export default function HomePage() {
         </div>
         {livros.length === 0 ? (
           <p style={{ color: "var(--text-muted)" }}>
-            Nenhum livro cadastrado ainda.{" "}
-            <Link href="/livros/novo" style={{ color: "var(--accent)" }}>
-              Adicionar primeiro livro
-            </Link>
+            Nenhum livro cadastrado ainda.
+            {user && (
+              <>
+                {" "}
+                <Link href="/livros/novo" style={{ color: "var(--accent)" }}>
+                  Adicionar primeiro livro
+                </Link>
+              </>
+            )}
           </p>
         ) : (
           <div className="livros-grid">

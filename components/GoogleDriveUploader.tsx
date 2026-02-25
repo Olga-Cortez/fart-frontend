@@ -25,12 +25,15 @@ export default function GoogleDriveUploader({
     async function init() {
       try {
         await googleDriveService.initialize();
-        setIsInitialized(true);
         // Verificar se já tem token
         setIsAuthenticated(googleDriveService.hasToken());
       } catch (err) {
         console.error("Erro ao inicializar Google Drive:", err);
-        setError("Erro ao inicializar Google Drive. Verifique as credenciais.");
+        setError(
+          "Não foi possível inicializar o Google Drive para upload. Você ainda pode colar links manualmente.",
+        );
+      } finally {
+        setIsInitialized(true);
       }
     }
     init();
@@ -102,14 +105,18 @@ export default function GoogleDriveUploader({
         return;
       }
 
-      // Tentar obter informações do arquivo (requer autenticação)
-      try {
-        const fileInfo = await googleDriveService.getFileInfo(fileId);
-        onFileUploaded(fileInfo.webViewLink, fileInfo.name);
-        setSuccess(`Arquivo "${fileInfo.name}" adicionado com sucesso!`);
-      } catch {
-        // Se não conseguir obter info, usar o link direto
-        const viewLink = googleDriveService.getViewLink(fileId);
+      const viewLink = googleDriveService.getViewLink(fileId);
+
+      if (isAuthenticated) {
+        try {
+          const fileInfo = await googleDriveService.getFileInfo(fileId);
+          onFileUploaded(fileInfo.webViewLink || viewLink, fileInfo.name || "Arquivo do Google Drive");
+          setSuccess(`Arquivo "${fileInfo.name}" adicionado com sucesso!`);
+        } catch {
+          onFileUploaded(viewLink, "Arquivo do Google Drive");
+          setSuccess("Link do arquivo adicionado!");
+        }
+      } else {
         onFileUploaded(viewLink, "Arquivo do Google Drive");
         setSuccess("Link do arquivo adicionado!");
       }
@@ -149,84 +156,84 @@ export default function GoogleDriveUploader({
         </div>
       )}
 
-      {!isAuthenticated ? (
-        <div className="gdrive-auth">
+      <div className="gdrive-actions">
+        {isAuthenticated ? (
+          <label
+            className={`btn btn-primary ${isUploading ? "btn-loading" : ""}`}
+            htmlFor="drive-upload"
+          >
+            {isUploading ? (
+              <>
+                <Loader2 className="animate-spin" size={16} />
+                <span>Enviando...</span>
+              </>
+            ) : (
+              <>
+                <Upload size={16} />
+                <span>Fazer Upload para Drive</span>
+              </>
+            )}
+            <input
+              id="drive-upload"
+              type="file"
+              accept={accept}
+              onChange={handleFileSelect}
+              disabled={isUploading}
+              className="file-input-hidden"
+            />
+          </label>
+        ) : (
           <button
             type="button"
             className="btn btn-primary"
             onClick={handleAuthenticate}
+            disabled={isUploading}
           >
             <Upload size={16} />
             <span>Conectar ao Google Drive</span>
           </button>
-          <p className="gdrive-auth-hint">
-            Conecte-se ao Google Drive para fazer upload de arquivos
-          </p>
+        )}
+
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setShowLinkInput(!showLinkInput)}
+          disabled={isUploading}
+        >
+          <LinkIcon size={16} />
+          <span>Colar Link do Drive</span>
+        </button>
+      </div>
+
+      {!isAuthenticated && (
+        <p className="gdrive-auth-hint">
+          O login é necessário apenas para upload. Para anexar um arquivo já existente, use "Colar Link do Drive".
+        </p>
+      )}
+
+      {showLinkInput && (
+        <div className="gdrive-link-input">
+          <input
+            type="url"
+            placeholder="Cole o link do Google Drive aqui..."
+            value={linkInput}
+            onChange={(e) => setLinkInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleLinkSubmit();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleLinkSubmit}
+            disabled={!linkInput.trim()}
+          >
+            Adicionar
+          </button>
         </div>
-      ) : (
-        <>
-          <div className="gdrive-actions">
-            <label
-              className={`btn btn-primary ${isUploading ? "btn-loading" : ""}`}
-              htmlFor="drive-upload"
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="animate-spin" size={16} />
-                  <span>Enviando...</span>
-                </>
-              ) : (
-                <>
-                  <Upload size={16} />
-                  <span>Fazer Upload para Drive</span>
-                </>
-              )}
-              <input
-                id="drive-upload"
-                type="file"
-                accept={accept}
-                onChange={handleFileSelect}
-                disabled={isUploading}
-                className="file-input-hidden"
-              />
-            </label>
-
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setShowLinkInput(!showLinkInput)}
-              disabled={isUploading}
-            >
-              <LinkIcon size={16} />
-              <span>Colar Link do Drive</span>
-            </button>
-          </div>
-
-          {showLinkInput && (
-            <div className="gdrive-link-input">
-              <input
-                type="url"
-                placeholder="Cole o link do Google Drive aqui..."
-                value={linkInput}
-                onChange={(e) => setLinkInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleLinkSubmit();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={handleLinkSubmit}
-                disabled={!linkInput.trim()}
-              >
-                Adicionar
-              </button>
-            </div>
-          )}
-        </>
       )}
 
       <style jsx>{`

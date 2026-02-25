@@ -22,12 +22,14 @@ import type { LivroComDetalhes, Arquivo } from "@/lib/types";
 import Loading from "@/components/Loading";
 import ConfirmModal from "@/components/ConfirmModal";
 import GoogleDriveUploader from "@/components/GoogleDriveUploader";
+import { useAuth } from "@/lib/authContext";
 
 export default function LivroDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const { user } = useAuth();
   const { id } = use(params);
   const router = useRouter();
   const [livro, setLivro] = useState<LivroComDetalhes | null>(null);
@@ -141,18 +143,20 @@ export default function LivroDetailPage({
               ))}
             </div>
           )}
-          <div className="livro-detail-actions">
-            <Link href={`/livros/${livro.id}/editar`} className="btn btn-secondary btn-sm">
-              <Edit size={16} /> Editar
-            </Link>
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => setShowDeleteModal(true)}
-            >
-              <Trash2 size={16} /> Excluir
-            </button>
-          </div>
+          {user && (
+            <div className="livro-detail-actions">
+              <Link href={`/livros/${livro.id}/editar`} className="btn btn-secondary btn-sm">
+                <Edit size={16} /> Editar
+              </Link>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={() => setShowDeleteModal(true)}
+              >
+                <Trash2 size={16} /> Excluir
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -204,16 +208,18 @@ export default function LivroDetailPage({
       <div className="detail-section">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h3>Arquivos</h3>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() => setShowUploader(!showUploader)}
-          >
-            {showUploader ? "Fechar" : "Adicionar Arquivo"}
-          </button>
+          {user && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowUploader(!showUploader)}
+            >
+              {showUploader ? "Fechar" : "Adicionar Arquivo"}
+            </button>
+          )}
         </div>
 
-        {showUploader && (
+        {user && showUploader && (
           <div style={{ marginBottom: "1.5rem", padding: "1rem", backgroundColor: "var(--bg-secondary)", borderRadius: "8px" }}>
             <GoogleDriveUploader onFileUploaded={handleUploadFile} />
           </div>
@@ -242,29 +248,33 @@ export default function LivroDetailPage({
                 >
                   <Download size={14} /> Visualizar
                 </a>
-                <button
-                  type="button"
-                  className="btn-icon"
-                  onClick={() => handleDeleteArquivo(arquivo)}
-                  aria-label="Excluir arquivo"
-                >
-                  <Trash2 size={16} />
-                </button>
+                {user && (
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={() => handleDeleteArquivo(arquivo)}
+                    aria-label="Excluir arquivo"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
             </div>
           ))
         )}
       </div>
 
-      <ConfirmModal
-        isOpen={showDeleteModal}
-        title="Excluir Livro"
-        message={`Tem certeza que deseja excluir "${livro.titulo}"? Esta ação não pode ser desfeita. Todos os arquivos serão removidos.`}
-        confirmLabel="Excluir"
-        onConfirm={handleDelete}
-        onCancel={() => setShowDeleteModal(false)}
-        loading={deleteLoading}
-      />
+      {user && (
+        <ConfirmModal
+          isOpen={showDeleteModal}
+          title="Excluir Livro"
+          message={`Tem certeza que deseja excluir "${livro.titulo}"? Esta ação não pode ser desfeita. Todos os arquivos serão removidos.`}
+          confirmLabel="Excluir"
+          onConfirm={handleDelete}
+          onCancel={() => setShowDeleteModal(false)}
+          loading={deleteLoading}
+        />
+      )}
     </div>
   );
 }

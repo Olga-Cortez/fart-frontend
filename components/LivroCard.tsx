@@ -20,11 +20,15 @@ export default function LivroCard({
   return (
     <Link href={`/livros/${livro.id}`} className="livro-card">
       {livro.capa ? (
-        <figure><img src={livro.capa} alt={livro.titulo} className="livro-card-capa" /></figure>
+        <figure>
+          <img src={livro.capa} alt={livro.titulo} className="livro-card-capa" />
+        </figure>
       ) : (
-        <div className="livro-card-icon">
-          <BookOpen size={32} />
-        </div>
+        <figure>
+          <div className="livro-card-icon">
+            <BookOpen size={32} />
+          </div>
+        </figure>
       )}
       <div className="livro-card-content">
         <h3 className="livro-card-title">{livro.titulo}</h3>

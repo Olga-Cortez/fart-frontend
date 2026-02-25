@@ -28,9 +28,11 @@ export default function NovoLivroPage() {
           edicao: data.edicao,
           isbn13: data.isbn13 || undefined,
           isbn10: data.isbn10 || undefined,
+          id_colecao: data.id_colecao || undefined,
         },
         data.autoresIds,
         data.categoriasIds,
+        data.tagsIds,
         data.driveLinks,
         data.capaFile,
       );
