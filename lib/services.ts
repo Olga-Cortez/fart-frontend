@@ -930,6 +930,7 @@ export async function deleteArquivo(arquivo: Arquivo): Promise<void> {
 export async function createLivroCompleto(
   livroData: {
     titulo: string;
+    subtitulo?: string;
     descricao?: string;
     ano: number;
     id_editora?: number | null;
@@ -1109,6 +1110,8 @@ export interface SearchResult {
   language: string;
   thumbnail: string;
   collectionName: string;
+  isbn10: string;
+  isbn13: string;
 }
 
 function getLanguageDisplayName(languageCode?: string): string {
@@ -1139,62 +1142,166 @@ function getLanguageDisplayName(languageCode?: string): string {
 
 export async function getLivroFromGoogleBooks(isbn: string): Promise<SearchResult | null> {
   try {
-    const params = new URLSearchParams({
-      q: `isbn:${isbn.trim()}`,
-      fields:
-        "totalItems," +
-        "items(volumeInfo/title," +
-        "volumeInfo/subtitle," +
-        "volumeInfo/description," +
-        "volumeInfo/authors," +
-        "volumeInfo/publishedDate," +
-        "volumeInfo/pageCount," +
-        "volumeInfo/language," +
-        "volumeInfo/publisher," +
-        "volumeInfo/imageLinks/thumbnail," +
-        "volumeInfo/seriesInfo),"
-    });
+    const normalizedIsbn = isbn.trim();
+    if (!normalizedIsbn) return null;
 
-    if (process.env.NEXT_PUBLIC_GOOGLE_API_KEY) {
-      params.set("key", process.env.NEXT_PUBLIC_GOOGLE_API_KEY);
-    }
-
-    const response = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?${params.toString()}`,
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      console.error("Erro na Google Books API:", response.status, errorData);
-      return null;
-    }
-
-    const data = await response.json();
-    if (data.totalItems > 0) {
-      const book = data.items[0].volumeInfo;
-      const rawSeriesCandidates = [
-        book.seriesInfo?.volumeSeries?.[0]?.seriesName,
-        book.seriesInfo?.volumeSeries?.[0]?.title,
-        book.seriesInfo?.volumeSeries?.[0]?.name,
-        book.seriesInfo?.series,
-      ];
-      const collectionName =
-        rawSeriesCandidates.find((value) => typeof value === "string" && value.trim()) || "";
-
-      return {
-        title: book.title,
-        subtitle: book.subtitle || "",
-        description: book.description || "",
-        authors: book.authors || [],
-        publishedDate: book.publishedDate || "",
-        pageCount: book.pageCount || 0,
-        language: getLanguageDisplayName(book.language),
-        publisher: book.publisher || "",
-        thumbnail: book.imageLinks?.thumbnail || "",
-        collectionName,
+    type GoogleBookVolumeInfo = {
+      title?: string;
+      subtitle?: string;
+      description?: string;
+      authors?: string[];
+      publishedDate?: string;
+      pageCount?: number;
+      language?: string;
+      publisher?: string;
+      imageLinks?: {
+        thumbnail?: string;
       };
+      industryIdentifiers?: Array<{
+        type?: string;
+        identifier?: string;
+      }>;
+      seriesInfo?: {
+        volumeSeries?: Array<{
+          seriesName?: string;
+          title?: string;
+          name?: string;
+        }>;
+        series?: string;
+      };
+    };
+
+    type GoogleBooksResponse = {
+      totalItems?: number;
+      items?: Array<{
+        volumeInfo?: GoogleBookVolumeInfo;
+      }>;
+    };
+
+    const fields =
+      "totalItems," +
+      "items(volumeInfo/title," +
+      "volumeInfo/subtitle," +
+      "volumeInfo/description," +
+      "volumeInfo/authors," +
+      "volumeInfo/publishedDate," +
+      "volumeInfo/pageCount," +
+      "volumeInfo/language," +
+      "volumeInfo/publisher," +
+      "volumeInfo/imageLinks/thumbnail," +
+      "volumeInfo/industryIdentifiers," +
+      "volumeInfo/seriesInfo)";
+
+    const fetchVolumes = async (
+      query: string,
+      maxResults: number = 1,
+    ): Promise<GoogleBookVolumeInfo[]> => {
+      const params = new URLSearchParams({
+        q: query,
+        fields,
+        maxResults: String(maxResults),
+      });
+
+      if (process.env.NEXT_PUBLIC_GOOGLE_API_KEY) {
+        params.set("key", process.env.NEXT_PUBLIC_GOOGLE_API_KEY);
+      }
+
+      const response = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?${params.toString()}`,
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        console.error("Erro na Google Books API:", response.status, errorData);
+        return [];
+      }
+
+      const data = (await response.json()) as GoogleBooksResponse;
+      if (!data.totalItems || !data.items || data.items.length === 0) {
+        return [];
+      }
+
+      return data.items
+        .map((item) => item.volumeInfo)
+        .filter((item): item is GoogleBookVolumeInfo => Boolean(item));
+    };
+
+    const isbnResults = await fetchVolumes(`isbn:${normalizedIsbn}`, 1);
+    const isbnBook = isbnResults[0] ?? null;
+    if (!isbnBook) return null;
+
+    let mergedBook: GoogleBookVolumeInfo = { ...isbnBook };
+
+    if (!isbnBook.publisher?.trim() && isbnBook.title?.trim()) {
+      const titleResults = await fetchVolumes(`intitle:${isbnBook.title.trim()}`, 8);
+      const titleBook =
+        titleResults.find((item) => item.publisher?.trim()) ?? titleResults[0] ?? null;
+
+      if (titleBook) {
+        mergedBook = {
+          ...isbnBook,
+          ...titleBook,
+          authors:
+            isbnBook.authors && isbnBook.authors.length > 0
+              ? isbnBook.authors
+              : titleBook.authors,
+        };
+
+        if (!isbnBook.publisher?.trim() && titleBook.publisher?.trim()) {
+          mergedBook.publisher = titleBook.publisher;
+        }
+      }
     }
-    return null;
+
+    if (!mergedBook.title?.trim()) return null;
+
+    const rawSeriesCandidates = [
+      mergedBook.seriesInfo?.volumeSeries?.[0]?.seriesName,
+      mergedBook.seriesInfo?.volumeSeries?.[0]?.title,
+      mergedBook.seriesInfo?.volumeSeries?.[0]?.name,
+      mergedBook.seriesInfo?.series,
+    ];
+
+    const getIdentifierByType = (
+      identifiers: GoogleBookVolumeInfo["industryIdentifiers"] | undefined,
+      targetType: "ISBN_10" | "ISBN_13",
+    ): string => {
+      if (!identifiers || identifiers.length === 0) return "";
+
+      const exact = identifiers.find(
+        (item) => item.type?.toUpperCase() === targetType && item.identifier?.trim(),
+      );
+      if (exact?.identifier) return exact.identifier.trim();
+
+      const fuzzy = identifiers.find(
+        (item) =>
+          item.type?.toUpperCase().includes(targetType) && item.identifier?.trim(),
+      );
+      return fuzzy?.identifier?.trim() ?? "";
+    };
+
+    const isbn10 = getIdentifierByType(mergedBook.industryIdentifiers, "ISBN_10");
+    const isbn13 = getIdentifierByType(mergedBook.industryIdentifiers, "ISBN_13");
+
+    const collectionName =
+      rawSeriesCandidates.find(
+        (value): value is string => typeof value === "string" && value.trim().length > 0,
+      ) ?? "";
+
+    return {
+      title: mergedBook.title,
+      subtitle: mergedBook.subtitle ?? "",
+      description: mergedBook.description ?? "",
+      authors: mergedBook.authors ?? [],
+      publishedDate: mergedBook.publishedDate ?? "",
+      pageCount: mergedBook.pageCount ?? 0,
+      language: getLanguageDisplayName(mergedBook.language),
+      publisher: mergedBook.publisher ?? "",
+      thumbnail: mergedBook.imageLinks?.thumbnail ?? "",
+      collectionName,
+      isbn10,
+      isbn13,
+    };
   } catch (error) {
     console.error("Erro ao buscar dados do livro:", error);
     return null;

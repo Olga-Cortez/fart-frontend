@@ -669,6 +669,12 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
       setDescricao(bookData.description || "");
       setPaginas(bookData.pageCount || 0);
       setIdioma(bookData.language || "Português");
+      if (bookData.isbn10) {
+        setIsbn10(bookData.isbn10);
+      }
+      if (bookData.isbn13) {
+        setIsbn13(bookData.isbn13);
+      }
 
       const { publisherName, collectionFromPublisher } = extrairEditoraEColecao(
         bookData.publisher || "",
