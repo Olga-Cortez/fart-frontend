@@ -863,11 +863,10 @@ export default function LivroForm({ livro, onSubmit, loading }: LivroFormProps) 
           </div>
 
           <div className="form-group">
-            <label htmlFor="subtitulo">Subtítulo *</label>
+            <label htmlFor="subtitulo">Subtítulo</label>
             <input
               id="subtitulo"
               type="text"
-              required
               value={subtitulo}
               onChange={(e) => setSubtitulo(e.target.value)}
               placeholder="Subtítulo do livro"
